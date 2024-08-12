@@ -1,0 +1,19 @@
+{
+  "name": "telegram-live-chat-bot",
+  "version": "1.0.0",
+  "description": "A Telegram bot for live chat support with language selection and conversation management.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-telegram-bot-api": "^0.58.0",
+    "firebase-admin": "^11.5.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "author": "Your Name",
+  "license": "ISC"
+}
