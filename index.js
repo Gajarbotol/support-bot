@@ -172,22 +172,16 @@ bot.on('message', (msg) => {
     // Stop waiting for the name
     delete awaitingName[chatId];
   } else if (activeChats[chatId]) {
-    // Handle active chat sessions
     const recipientChatId = activeChats[chatId];
 
-    // Stop conversation if the admin sends the "Stop Conversation" message
-    if (msg.text.toLowerCase() === 'stop conversation') {
-      delete activeChats[chatId];
-      delete activeChats[recipientChatId];
+    // Forward the user's message to the admin
+    bot.sendMessage(recipientChatId, text);
 
-      bot.sendMessage(chatId, '*Conversation has been stopped.*', { parse_mode: 'Markdown' });
-      bot.sendMessage(recipientChatId, '*The conversation has been stopped by customer service.*', { parse_mode: 'Markdown' });
+  } else if (adminChatIds.includes(chatId.toString()) && activeChats[chatId]) {
+    const recipientChatId = activeChats[chatId];
 
-      return;
-    }
-
-    // Forward messages between user and admin
-    bot.sendMessage(recipientChatId, msg.text);
+    // Forward the admin's message to the user
+    bot.sendMessage(recipientChatId, text);
   } else {
     // Regular message handling
     if (adminChatIds.includes(chatId.toString())) {
@@ -243,7 +237,7 @@ bot.on('callback_query', (callbackQuery) => {
     activeChats[chatId] = adminChatId;
     activeChats[adminChatId] = chatId;
 
-    bot.sendMessage(chatId, '*You are now connected to customer service. Feel free to ask your questions.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '*You are now connected to customer service. Feel free to ask your questions.*\n*Note: Only the admin can stop the conversation.*', { parse_mode: 'Markdown' });
     bot.sendMessage(adminChatId, '*You are now connected with the user. You can start the conversation.*', {
       parse_mode: 'Markdown',
       reply_markup: {
