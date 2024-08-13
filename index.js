@@ -19,7 +19,7 @@ const bot = new TelegramBot(token, { polling: true });
 const bannedUsers = {}; // To store banned users
 const lastReplyTimes = {}; // To store the last reply times
 const activeChats = {}; // To store active chat sessions
-const awaitingName = {}; // To track users awaiting a name input
+const awaitingName = {}; // To track users awaiting name input
 
 // Function to determine the time of day in Bangladesh
 const getBangladeshGreeting = () => {
@@ -62,7 +62,13 @@ bot.onText(/\/start/, (msg) => {
   saveUser(chatId, userFullName);
 
   const greeting = getBangladeshGreeting();
-  const welcomeMessage = `${greeting} ${userFullName}!\n\nPlease select your preferred language:\n\n${greeting}, ${userFullName}!\n\nঅনুগ্রহ করে আপনার পছন্দের ভাষা নির্বাচন করুন:`;
+  const greetingMessage = `${greeting}, ${userFullName}!`;
+
+  // Send the greeting message
+  bot.sendMessage(chatId, greetingMessage);
+
+  // Separate message for language selection
+  const languageMessage = `Please select your preferred language:\n\nঅনুগ্রহ করে আপনার পছন্দের ভাষা নির্বাচন করুন:`;
 
   const options = {
     reply_markup: {
@@ -73,7 +79,8 @@ bot.onText(/\/start/, (msg) => {
     }
   };
 
-  bot.sendMessage(chatId, welcomeMessage, options);
+  // Send the language selection message
+  bot.sendMessage(chatId, languageMessage, options);
 });
 
 // Handle language selection callback queries
@@ -116,57 +123,54 @@ bot.on('callback_query', (callbackQuery) => {
   const chatId = message.chat.id;
 
   if (callbackQuery.data === 'customer_service') {
-    // Ask the user for their name
-    bot.sendMessage(chatId, '*Please enter your name so that we can better assist you.*', { parse_mode: 'Markdown' });
-
-    // Mark this user as awaiting name input
+    // Ask for the user's name before proceeding
     awaitingName[chatId] = true;
+    bot.sendMessage(chatId, '*Please enter your name to proceed with the live chat request.*', { parse_mode: 'Markdown' });
   }
 });
 
-// Handle incoming messages (e.g., user's name)
+// Handle name input and forward to admin
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
-  const userMessage = msg.text;
+  const text = msg.text;
 
-  // Check if the user is currently being asked for their name
   if (awaitingName[chatId]) {
-    // Save the user's name to Firebase
-    db.ref(`users/${chatId}`).update({ providedName: userMessage });
+    const userProvidedName = text.trim();
 
-    // Remove the user from the awaitingName object
-    delete awaitingName[chatId];
+    // Save the name to Firebase and update the user info
+    db.ref(`users/${chatId}`).update({ providedName: userProvidedName });
 
-    // Retrieve user information from Firebase
+    // Notify the admins with all the details
     db.ref(`users/${chatId}`).once('value', (snapshot) => {
       const userInfo = snapshot.val();
       const userFullName = userInfo.name;
-      const providedName = userMessage; // The name provided by the user
-      const language = userInfo.language;
+      const language = userInfo.language || 'Not set';
 
-      // Notify admins about the live chat request
       adminChatIds.forEach((adminChatId) => {
         const options = {
           reply_markup: {
             inline_keyboard: [
               [{ text: 'Deny', callback_data: `deny_${chatId}` }],
-              [{ text: 'Start Conversation', callback_data: `start_chat_${chatId}` }]
+              [{ text: 'Start Conversation', callback_data: `start_${chatId}` }]
             ]
           }
         };
 
-        bot.sendMessage(adminChatId, `*New Live Chat Request*\n\n*User:* ${userFullName}\n*Provided Name:* ${providedName}\n*ID:* ${chatId}\n*Language:* ${language}`, options);
+        bot.sendMessage(adminChatId, `*New Live Chat Request*\n\n*User's Full Name:* ${userFullName}\n*Provided Name:* ${userProvidedName}\n*ID:* ${chatId}\n*Language:* ${language}`, options);
       });
-
-      // Notify the user that their request has been sent
-      bot.sendMessage(chatId, '*Your request has been sent to customer service. Please wait for a response.*', { parse_mode: 'Markdown' });
     });
+
+    // Confirm to the user
+    bot.sendMessage(chatId, '*Your request has been sent to customer service. Please wait for a response.*', { parse_mode: 'Markdown' });
+
+    // Stop waiting for the name
+    delete awaitingName[chatId];
   } else if (activeChats[chatId]) {
-    // Forward messages between user and admin during an active chat session
+    // Handle active chat sessions
     const recipientChatId = activeChats[chatId];
 
     // Stop conversation if the admin sends the "Stop Conversation" message
-    if (userMessage.toLowerCase() === 'stop conversation') {
+    if (msg.text.toLowerCase() === 'stop conversation') {
       delete activeChats[chatId];
       delete activeChats[recipientChatId];
 
@@ -177,9 +181,9 @@ bot.on('message', (msg) => {
     }
 
     // Forward messages between user and admin
-    bot.sendMessage(recipientChatId, userMessage);
+    bot.sendMessage(recipientChatId, msg.text);
   } else {
-    // Handle regular message processing or other commands
+    // Regular message handling
     if (adminChatIds.includes(chatId.toString())) {
       return; // Admins should not be able to use this section of the bot
     }
@@ -189,7 +193,7 @@ bot.on('message', (msg) => {
       return;
     }
 
-    if (userMessage && !userMessage.startsWith('/')) {
+    if (msg.text && !msg.text.startsWith('/')) {
       const userFullName = `${msg.from.first_name} ${msg.from.last_name || ''}`.trim();
 
       // Forward the user message to admin chat IDs and store metadata
@@ -200,7 +204,7 @@ bot.on('message', (msg) => {
             originalChatId: chatId,
             originalMessageId: msg.message_id,
             userFullName: userFullName,
-            text: userMessage,
+            text: msg.text,
             timestamp: Date.now()
           });
         });
@@ -226,85 +230,110 @@ bot.on('callback_query', (callbackQuery) => {
   if (action === 'deny') {
     bot.sendMessage(chatId, '*Your live chat request has been denied.*', { parse_mode: 'Markdown' });
   } else if (action === 'start') {
+    // Start the live chat session
     activeChats[chatId] = adminChatId;
     activeChats[adminChatId] = chatId;
 
     bot.sendMessage(chatId, '*You are now connected to customer service. Feel free to ask your questions.*', { parse_mode: 'Markdown' });
-    bot.sendMessage(adminChatId, '*You are now connected to the user. Please assist them.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(adminChatId, '*You are now connected with the user. You can start the conversation.*', { parse_mode: 'Markdown' });
   }
 });
 
-// Ban command to block users from using the bot
+// Handle banning a user
 bot.onText(/\/ban (.+)/, (msg, match) => {
   const chatId = msg.chat.id;
-  const userIdOrUsername = match[1].trim();
+  const input = match[1].trim();
 
-  if (adminChatIds.includes(chatId.toString())) {
-    if (!userIdOrUsername) {
-      bot.sendMessage(chatId, 'Please provide a user ID or username to ban.');
-      return;
-    }
+  if (!adminChatIds.includes(chatId.toString())) {
+    bot.sendMessage(chatId, '*You are not authorized to use this command.*', { parse_mode: 'Markdown' });
+    return;
+  }
 
-    if (/^\d+$/.test(userIdOrUsername)) {
-      // It's a user ID
-      bannedUsers[userIdOrUsername] = true;
-      bot.sendMessage(chatId, `User with ID ${userIdOrUsername} has been banned.`);
-    } else {
-      // It's a username
-      bot.getChat(userIdOrUsername).then(userChat => {
-        const userChatId = userChat.id;
-        bannedUsers[userChatId] = true;
-        bot.sendMessage(chatId, `User with username ${userIdOrUsername} has been banned.`);
-      }).catch(error => {
-        bot.sendMessage(chatId, `Could not find user with username ${userIdOrUsername}.`);
-      });
-    }
+  let targetChatId;
+
+  if (input.startsWith('@')) {
+    // Ban by username
+    const username = input.substring(1);
+    db.ref('users').orderByChild('username').equalTo(username).once('value', snapshot => {
+      if (snapshot.exists()) {
+        snapshot.forEach(childSnapshot => {
+          targetChatId = childSnapshot.key;
+          bannedUsers[targetChatId] = true;
+          db.ref(`banned/${targetChatId}`).set(true);
+          bot.sendMessage(chatId, `*User ${username} has been banned.*`, { parse_mode: 'Markdown' });
+        });
+      } else {
+        bot.sendMessage(chatId, `*No user found with username @${username}.*`, { parse_mode: 'Markdown' });
+      }
+    });
+  } else {
+    // Ban by chat ID
+    targetChatId = input;
+    bannedUsers[targetChatId] = true;
+    db.ref(`banned/${targetChatId}`).set(true);
+    bot.sendMessage(chatId, `*User with ID ${targetChatId} has been banned.*`, { parse_mode: 'Markdown' });
   }
 });
 
-// Unban command to allow users to use the bot again
+// Handle unbanning a user
 bot.onText(/\/unban (.+)/, (msg, match) => {
   const chatId = msg.chat.id;
-  const userIdOrUsername = match[1].trim();
+  const input = match[1].trim();
 
-  if (adminChatIds.includes(chatId.toString())) {
-    if (!userIdOrUsername) {
-      bot.sendMessage(chatId, 'Please provide a user ID or username to unban.');
-      return;
-    }
+  if (!adminChatIds.includes(chatId.toString())) {
+    bot.sendMessage(chatId, '*You are not authorized to use this command.*', { parse_mode: 'Markdown' });
+    return;
+  }
 
-    if (/^\d+$/.test(userIdOrUsername)) {
-      // It's a user ID
-      delete bannedUsers[userIdOrUsername];
-      bot.sendMessage(chatId, `User with ID ${userIdOrUsername} has been unbanned.`);
-    } else {
-      // It's a username
-      bot.getChat(userIdOrUsername).then(userChat => {
-        const userChatId = userChat.id;
-        delete bannedUsers[userChatId];
-        bot.sendMessage(chatId, `User with username ${userIdOrUsername} has been unbanned.`);
-      }).catch(error => {
-        bot.sendMessage(chatId, `Could not find user with username ${userIdOrUsername}.`);
-      });
-    }
+  let targetChatId;
+
+  if (input.startsWith('@')) {
+    // Unban by username
+    const username = input.substring(1);
+    db.ref('users').orderByChild('username').equalTo(username).once('value', snapshot => {
+      if (snapshot.exists()) {
+        snapshot.forEach(childSnapshot => {
+          targetChatId = childSnapshot.key;
+          delete bannedUsers[targetChatId];
+          db.ref(`banned/${targetChatId}`).remove();
+          bot.sendMessage(chatId, `*User ${username} has been unbanned.*`, { parse_mode: 'Markdown' });
+        });
+      } else {
+        bot.sendMessage(chatId, `*No user found with username @${username}.*`, { parse_mode: 'Markdown' });
+      }
+    });
+  } else {
+    // Unban by chat ID
+    targetChatId = input;
+    delete bannedUsers[targetChatId];
+    db.ref(`banned/${targetChatId}`).remove();
+    bot.sendMessage(chatId, `*User with ID ${targetChatId} has been unbanned.*`, { parse_mode: 'Markdown' });
   }
 });
 
-// View banned users command
+// Handle fetching the list of banned users
 bot.onText(/\/banned/, (msg) => {
   const chatId = msg.chat.id;
 
-  if (adminChatIds.includes(chatId.toString())) {
-    const bannedUserList = Object.keys(bannedUsers).map(userId => `ID: ${userId}`).join('\n');
-    bot.sendMessage(chatId, `Banned users:\n\n${bannedUserList}`);
+  if (!adminChatIds.includes(chatId.toString())) {
+    bot.sendMessage(chatId, '*You are not authorized to use this command.*', { parse_mode: 'Markdown' });
+    return;
   }
+
+  db.ref('banned').once('value', (snapshot) => {
+    if (snapshot.exists()) {
+      let bannedList = '*Banned Users:*\n';
+      snapshot.forEach((childSnapshot) => {
+        bannedList += `\n- ${childSnapshot.key}`;
+      });
+      bot.sendMessage(chatId, bannedList, { parse_mode: 'Markdown' });
+    } else {
+      bot.sendMessage(chatId, '*No banned users found.*', { parse_mode: 'Markdown' });
+    }
+  });
 });
 
-// Express server to keep the bot alive (for environments like Heroku)
-app.get('/', (req, res) => {
-  res.send('Telegram bot is running');
-});
-
+// Start Express server (optional, if you want to serve webhooks or health checks)
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
