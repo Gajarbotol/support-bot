@@ -119,8 +119,6 @@ bot.on('callback_query', (callbackQuery) => {
     }
   };
 
-  bot.deleteMessage(chatId, message.message_id);
-
   // Send the language selection message
   bot.sendMessage(chatId, responseMessage, options);
 });
@@ -132,7 +130,6 @@ bot.on('callback_query', (callbackQuery) => {
 
   if (callbackQuery.data === 'customer_service') {
     awaitingName[chatId] = true;
-    bot.deleteMessage(chatId, message.message_id);
     bot.sendMessage(chatId, '*অনুগ্রহ করে লাইভ চ্যাট চালিয়ে যাওয়ার জন্য আপনার নাম লিখুন।*', { parse_mode: 'Markdown' });
   }
 });
@@ -210,8 +207,6 @@ bot.on('callback_query', (callbackQuery) => {
   const actionData = callbackQuery.data.split('_');
   const action = actionData[0];
   const chatId = actionData[1];
-
-  bot.deleteMessage(adminChatId, message.message_id);
 
   if (action === 'deny') {
     bot.sendMessage(chatId, '*আপনার লাইভ চ্যাট অনুরোধটি প্রশাসক দ্বারা প্রত্যাখ্যান করা হয়েছে।*', { parse_mode: 'Markdown' });
@@ -293,7 +288,7 @@ bot.onText(/\/unban (\d+)/, (msg, match) => {
 
   if (adminChatIds.includes(chatId.toString())) {
     delete bannedUsers[userIdToUnban];
-    bot.sendMessage(chatId, `ব্যবহারকারী ${userIdToUnban} নিষিদ্ধ মুক্ত হয়েছে।`);
+    bot.sendMessage(chatId, `ব্যবহারকারী ${userIdToUnban নিষিদ্ধ মুক্ত হয়েছে।`);
     bot.sendMessage(userIdToUnban, '*আপনি আবার এই বট ব্যবহার করতে পারবেন।*', { parse_mode: 'Markdown' });
   }
 });
