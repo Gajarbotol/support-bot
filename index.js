@@ -244,7 +244,21 @@ bot.on('callback_query', (callbackQuery) => {
     activeChats[adminChatId] = chatId;
 
     bot.sendMessage(chatId, '*You are now connected to customer service. Feel free to ask your questions.*', { parse_mode: 'Markdown' });
-    bot.sendMessage(adminChatId, '*You are now connected with the user. You can start the conversation.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(adminChatId, '*You are now connected with the user. You can start the conversation.*', {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Stop Conversation', callback_data: `stop_${chatId}` }]
+        ]
+      }
+    });
+  } else if (action === 'stop') {
+    // Stop the live chat session
+    delete activeChats[chatId];
+    delete activeChats[adminChatId];
+
+    bot.sendMessage(chatId, '*The conversation has been stopped by customer service.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(adminChatId, '*Conversation has been stopped.*', { parse_mode: 'Markdown' });
   }
 });
 
