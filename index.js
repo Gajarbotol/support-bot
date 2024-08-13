@@ -65,28 +65,31 @@ bot.onText(/\/start/, (msg) => {
   const greetingMessage = `${greeting}, ${userFullName}!`;
 
   // Send the greeting message
-  bot.sendMessage(chatId, greetingMessage);
+  bot.sendMessage(chatId, greetingMessage).then(() => {
+    // Separate message for language selection
+    const languageMessage = `Please select your preferred language:\n\nঅনুগ্রহ করে আপনার পছন্দের ভাষা নির্বাচন করুন:`;
 
-  // Separate message for language selection
-  const languageMessage = `Please select your preferred language:\n\nঅনুগ্রহ করে আপনার পছন্দের ভাষা নির্বাচন করুন:`;
+    const options = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'বাংলা', callback_data: 'language_bn' }],
+          [{ text: 'English', callback_data: 'language_en' }]
+        ]
+      }
+    };
 
-  const options = {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: 'বাংলা', callback_data: 'language_bn' }],
-        [{ text: 'English', callback_data: 'language_en' }]
-      ]
-    }
-  };
-
-  // Send the language selection message
-  bot.sendMessage(chatId, languageMessage, options);
+    // Send the language selection message
+    bot.sendMessage(chatId, languageMessage, options);
+  });
 });
 
 // Handle language selection callback queries
 bot.on('callback_query', (callbackQuery) => {
   const message = callbackQuery.message;
   const chatId = message.chat.id;
+
+  // Delete the message that triggered the callback
+  bot.deleteMessage(chatId, message.message_id);
 
   // Check if the user is banned
   if (bannedUsers[chatId]) {
@@ -114,13 +117,19 @@ bot.on('callback_query', (callbackQuery) => {
     }
   };
 
-  bot.sendMessage(chatId, responseMessage, options);
+  bot.sendMessage(chatId, responseMessage, options).then(() => {
+    // Delete the language selection response after a few seconds
+    setTimeout(() => bot.deleteMessage(chatId, message.message_id + 1), 3000);
+  });
 });
 
 // Handle customer service request
 bot.on('callback_query', (callbackQuery) => {
   const message = callbackQuery.message;
   const chatId = message.chat.id;
+
+  // Delete the message that triggered the callback
+  bot.deleteMessage(chatId, message.message_id);
 
   if (callbackQuery.data === 'customer_service') {
     // Ask for the user's name before proceeding
@@ -163,8 +172,9 @@ bot.on('message', (msg) => {
     // Confirm to the user
     bot.sendMessage(chatId, '*Your request has been sent to customer service. Please wait for a response.*', { parse_mode: 'Markdown' });
 
-    // Stop waiting for the name
+    // Stop waiting for the name and delete the name request message
     delete awaitingName[chatId];
+    bot.deleteMessage(chatId, msg.message_id);
   } else if (activeChats[chatId]) {
     // Handle active chat sessions
     const recipientChatId = activeChats[chatId];
@@ -213,33 +223,13 @@ bot.on('message', (msg) => {
       // Check if the last reply was sent more than 15 minutes ago and send an automatic reply
       if (!lastReplyTimes[chatId] || Date.now() - lastReplyTimes[chatId] > 15 * 60 * 1000) {
         lastReplyTimes[chatId] = Date.now();
-        bot.sendMessage(chatId, 'Thank you for your message! Our support team will get back to you shortly. Meanwhile, you can also join our support group at: https://t.me/your_support.');
+        bot.sendMessage(chatId, 'Thank you for your message. Our customer service team will get back to you shortly.', { parse_mode: 'Markdown' });
       }
     }
   }
 });
 
-// Handle admin responses to live chat requests
-bot.on('callback_query', (callbackQuery) => {
-  const message = callbackQuery.message;
-  const adminChatId = message.chat.id;
-  const actionData = callbackQuery.data.split('_');
-  const action = actionData[0];
-  const chatId = actionData[1];
-
-  if (action === 'deny') {
-    bot.sendMessage(chatId, '*Your live chat request has been denied.*', { parse_mode: 'Markdown' });
-  } else if (action === 'start') {
-    // Start the live chat session
-    activeChats[chatId] = adminChatId;
-    activeChats[adminChatId] = chatId;
-
-    bot.sendMessage(chatId, '*You are now connected to customer service. Feel free to ask your questions.*', { parse_mode: 'Markdown' });
-    bot.sendMessage(adminChatId, '*You are now connected with the user. You can start the conversation.*', { parse_mode: 'Markdown' });
-  }
-});
-
-// Handle banning a user
+// Handle admin commands to ban/unban users
 bot.onText(/\/ban (.+)/, (msg, match) => {
   const chatId = msg.chat.id;
   const input = match[1].trim();
