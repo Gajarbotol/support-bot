@@ -107,7 +107,7 @@ bot.on('callback_query', (callbackQuery) => {
   }
 });
 
-// Handle incoming user messages and forward them to the assigned admin only if the conversation is active
+// Handle incoming user messages and send them to the assigned admin only if the conversation is active
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username ? `@${msg.from.username}` : "N/A";
@@ -117,8 +117,8 @@ bot.on('message', (msg) => {
   if (activeChats[chatId]) {
     const adminChatId = activeChats[chatId];
 
-    // Forward the user's message to the admin if the chat is active
-    bot.forwardMessage(adminChatId, chatId, msg.message_id);
+    // Send the user's message to the admin as the bot
+    bot.sendMessage(adminChatId, `*User Message*\n\n*User ID:* ${chatId}\n*Message:* ${msg.text}`, { parse_mode: 'Markdown' });
   } else if (awaitingName[chatId]) {
     // Logic for handling name input
     const userProvidedName = msg.text.trim();
@@ -141,7 +141,13 @@ bot.on('message', (msg) => {
     bot.sendMessage(chatId, '*Your request has been sent to customer service. Please wait for a response.*', { parse_mode: 'Markdown' });
     delete awaitingName[chatId];
   } else if (adminChatIds.includes(chatId.toString())) {
-    // Logic for handling messages from admins can go here
+    // Logic for handling messages from admins
+    const userChatId = activeChats[chatId];
+
+    if (userChatId) {
+      // Send the admin's message to the user without exposing the admin's identity
+      bot.sendMessage(userChatId, msg.text);
+    }
   } else if (bannedUsers[chatId]) {
     // If the user is banned, notify them
     bot.sendMessage(chatId, '*আপনি এই বট ব্যবহার থেকে নিষিদ্ধ হয়েছেন।*\n*You have been banned from using this bot.*', { parse_mode: 'Markdown' });
