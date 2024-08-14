@@ -128,17 +128,17 @@ bot.on('message', (msg) => {
       const options = {
         reply_markup: {
           inline_keyboard: [
-            [{ text: 'প্রত্যাখ্যান করুন / Deny', callback_data: `deny_${chatId}` }],
-            [{ text: 'কথোপকথন শুরু করুন / Start Conversation', callback_data: `start_${chatId}` }]
+            [{ text: 'Deny', callback_data: `deny_${chatId}` }],
+            [{ text: 'Start Conversation', callback_data: `start_${chatId}` }]
           ]
         }
       };
 
       // Adding more information about the user in the request
-      bot.sendMessage(adminChatId, `*নতুন লাইভ চ্যাট অনুরোধ / New Live Chat Request*\n\n*ব্যবহারকারীর প্রদত্ত নাম / User Provided Name:* ${userProvidedName}\n*পূর্ণ নাম / Full Name:* ${userFullName}\n*ইউজারনেম / Username:* ${username}\n*ব্যবহারকারীর আইডি / User ID:* ${chatId}`, options);
+      bot.sendMessage(adminChatId, `*New Live Chat Request*\n\n*User Provided Name:* ${userProvidedName}\n*Full Name:* ${userFullName}\n*Username:* ${username}\n*User ID:* ${chatId}`, options);
     });
 
-    bot.sendMessage(chatId, '*আপনার অনুরোধ গ্রাহক সেবায় পাঠানো হয়েছে। অনুগ্রহ করে একটি প্রতিক্রিয়া জন্য অপেক্ষা করুন।*\n\n*Your request has been sent to customer service. Please wait for a response.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '*Your request has been sent to customer service. Please wait for a response.*', { parse_mode: 'Markdown' });
     delete awaitingName[chatId];
   } else if (adminChatIds.includes(chatId.toString())) {
     // Logic for handling messages from admins can go here
