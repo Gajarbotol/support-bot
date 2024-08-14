@@ -1,23 +1,13 @@
 const TelegramBot = require('node-telegram-bot-api');
-const admin = require('firebase-admin');
-const serviceAccount = require('./firebase-service-account.json');
 const express = require('express');
 const app = express();
 
 const token = process.env.TELEGRAM_BOT_TOKEN; // Use environment variable for bot token
 const adminChatIds = [process.env.ADMIN_CHAT_ID_1, process.env.ADMIN_CHAT_ID_2]; // Use environment variables for admin chat IDs
 
-// Initialize Firebase
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: 'https://user-storage-74dd4-default-rtdb.firebaseio.com/' // Your database URL
-});
-
-const db = admin.database();
 const bot = new TelegramBot(token, { polling: true });
 
 const bannedUsers = {}; // To store banned users
-const lastReplyTimes = {}; // To store the last reply times
 const activeChats = {}; // To store active chat sessions
 const awaitingName = {}; // To track users awaiting name input
 
@@ -37,17 +27,6 @@ const getBangladeshGreeting = () => {
   }
 };
 
-// Save user to Firebase
-const saveUser = (chatId, userFullName) => {
-  db.ref(`users/${chatId}`).set({
-    name: userFullName
-  }, (error) => {
-    if (error) {
-      console.error('Error saving user to Firebase:', error);
-    }
-  });
-};
-
 // Handle start command
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
@@ -58,8 +37,6 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, '*আপনি এই বট ব্যবহার থেকে নিষিদ্ধ হয়েছেন।*', { parse_mode: 'Markdown' });
     return;
   }
-
-  saveUser(chatId, userFullName);
 
   const greeting = getBangladeshGreeting();
   const greetingMessage = `${greeting}, ${userFullName}!`;
@@ -97,28 +74,26 @@ bot.on('callback_query', (callbackQuery) => {
   let responseMessage = '';
   let optionLabels = { channel: '', customerService: '' };
   if (callbackQuery.data === 'language_bn') {
-    // Set the language to Bangla
-    db.ref(`users/${chatId}`).update({ language: 'bn' });
     responseMessage = '*আপনি বাংলা ভাষা নির্বাচন করেছেন।*\n\nঅনুগ্রহ করে আপনার পছন্দের অপশন নির্বাচন করুন:';
     optionLabels.channel = 'আমাদের চ্যানেল জয়েন করুন';
     optionLabels.customerService = 'কাস্টমার সার্ভিস';
   } else if (callbackQuery.data === 'language_en') {
-    // Set the language to English
-    db.ref(`users/${chatId}`).update({ language: 'en' });
     responseMessage = '*You have selected English.*\n\nPlease select your preferred option:';
     optionLabels.channel = 'Join Our Channel';
     optionLabels.customerService = 'Customer Service';
   }
 
-  // Send the language selection message without deleting the previous message
-  bot.sendMessage(chatId, responseMessage, {
+  const options = {
     reply_markup: {
       inline_keyboard: [
         [{ text: optionLabels.channel, url: 'https://t.me/your_channel' }],
         [{ text: optionLabels.customerService, callback_data: 'customer_service' }]
       ]
     }
-  });
+  };
+
+  // Send the language selection message
+  bot.sendMessage(chatId, responseMessage, options);
 });
 
 // Handle customer service request
@@ -128,7 +103,7 @@ bot.on('callback_query', (callbackQuery) => {
 
   if (callbackQuery.data === 'customer_service') {
     awaitingName[chatId] = true;
-    bot.sendMessage(chatId, '*অনুগ্রহ করে লাইভ চ্যাট চালিয়ে যাওয়ার জন্য আপনার নাম লিখুন।*', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '*অনুগ্রহ করে লাইভ চ্যাট চালিয়ে যাওয়ার জন্য আপনার নাম লিখুন।*\n\n*Please enter your name to continue the live chat.*', { parse_mode: 'Markdown' });
   }
 });
 
@@ -140,30 +115,21 @@ bot.on('message', (msg) => {
   if (awaitingName[chatId]) {
     const userProvidedName = text.trim();
 
-    // Save the name to Firebase and update the user info
-    db.ref(`users/${chatId}`).update({ providedName: userProvidedName });
-
     // Notify the admins with all the details
-    db.ref(`users/${chatId}`).once('value', (snapshot) => {
-      const userInfo = snapshot.val();
-      const userFullName = userInfo.name;
-      const language = userInfo.language || 'Not set';
+    adminChatIds.forEach((adminChatId) => {
+      const options = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Deny', callback_data: `deny_${chatId}` }],
+            [{ text: 'Start Conversation', callback_data: `start_${chatId}` }]
+          ]
+        }
+      };
 
-      adminChatIds.forEach((adminChatId) => {
-        const options = {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: 'Deny', callback_data: `deny_${chatId}` }],
-              [{ text: 'Start Conversation', callback_data: `start_${chatId}` }]
-            ]
-          }
-        };
-
-        bot.sendMessage(adminChatId, `*New Live Chat Request*\n\n*Full Name:* ${userFullName}\n*Provided Name:* ${userProvidedName}\n*ID:* ${chatId}\n*Language:* ${language}`, options);
-      });
+      bot.sendMessage(adminChatId, `*নতুন লাইভ চ্যাট অনুরোধ*\n\n*ব্যবহারকারীর প্রদত্ত নাম:* ${userProvidedName}\n*ID:* ${chatId}`, options);
     });
 
-    bot.sendMessage(chatId, '*Your request has been sent to customer support. Please wait for a response.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '*আপনার অনুরোধ গ্রাহক সেবায় পাঠানো হয়েছে। অনুগ্রহ করে একটি প্রতিক্রিয়া জন্য অপেক্ষা করুন।*\n\n*Your request has been sent to customer service. Please wait for a response.*', { parse_mode: 'Markdown' });
     delete awaitingName[chatId];
   } else if (activeChats[chatId]) {
     const recipientChatId = activeChats[chatId];
@@ -171,7 +137,7 @@ bot.on('message', (msg) => {
   } else if (adminChatIds.includes(chatId.toString())) {
     return; // Admins should not be able to use this section of the bot
   } else if (bannedUsers[chatId]) {
-    bot.sendMessage(chatId, '*You have been banned from using this bot.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '*আপনি এই বট ব্যবহার থেকে নিষিদ্ধ হয়েছেন।*', { parse_mode: 'Markdown' });
   }
 });
 
@@ -184,13 +150,13 @@ bot.on('callback_query', (callbackQuery) => {
   const chatId = actionData[1];
 
   if (action === 'deny') {
-    bot.sendMessage(chatId, '*আপনার লাইভ চ্যাট অনুরোধটি প্রশাসক দ্বারা প্রত্যাখ্যান করা হয়েছে।*', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '*আপনার লাইভ চ্যাট অনুরোধটি প্রশাসক দ্বারা প্রত্যাখ্যান করা হয়েছে।*\n\n*Your live chat request has been denied by the admin.*', { parse_mode: 'Markdown' });
   } else if (action === 'start') {
     activeChats[chatId] = adminChatId;
     activeChats[adminChatId] = chatId;
 
-    bot.sendMessage(chatId, '*একজন প্রশাসক আপনার সাথে সংযুক্ত হয়েছে। আপনি আর কথোপকথন বন্ধ করতে পারবেন না।*', { parse_mode: 'Markdown' });
-    bot.sendMessage(adminChatId, '*আপনি এখন এই ব্যবহারকারীর সাথে সংযুক্ত।*', {
+    bot.sendMessage(chatId, '*একজন প্রশাসক আপনার সাথে সংযুক্ত হয়েছে। আপনি আর কথোপকথন বন্ধ করতে পারবেন না।*\n\n*An admin has connected with you. You can no longer end the conversation.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(adminChatId, '*আপনি এখন এই ব্যবহারকারীর সাথে সংযুক্ত।*\n\n*You are now connected with this user.*', {
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
@@ -199,8 +165,8 @@ bot.on('callback_query', (callbackQuery) => {
       }
     });
   } else if (action === 'stop') {
-    bot.sendMessage(chatId, '*প্রশাসক দ্বারা কথোপকথন শেষ করা হয়েছে।*', { parse_mode: 'Markdown' });
-    bot.sendMessage(adminChatId, '*কথোপকথন শেষ হয়েছে।*', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '*প্রশাসক দ্বারা কথোপকথন শেষ করা হয়েছে।*\n\n*The conversation has been ended by the admin.*', { parse_mode: 'Markdown' });
+    bot.sendMessage(adminChatId, '*কথোপকথন শেষ হয়েছে।*\n\n*The conversation has ended.*', { parse_mode: 'Markdown' });
 
     delete activeChats[chatId];
     delete activeChats[adminChatId];
@@ -222,46 +188,58 @@ bot.onText(/\/list/, (msg) => {
     });
 
     if (activeChatsList === '*সক্রিয় চ্যাটগুলো:*\n') {
-      activeChatsList += '\nকোনও সক্রিয় চ্যাট নেই।';
+      activeChatsList += 'কোন সক্রিয় চ্যাট নেই।';
     }
 
     bot.sendMessage(chatId, activeChatsList, { parse_mode: 'Markdown' });
   }
 });
 
-// /ban command to ban a user
-bot.onText(/\/ban (.+)/, (msg, match) => {
+// /broadcast command to send a message to all users
+bot.onText(/\/broadcast (.+)/, (msg, match) => {
   const chatId = msg.chat.id;
-  const userToBan = match[1];
+  const message = match[1];
 
   if (adminChatIds.includes(chatId.toString())) {
-    bannedUsers[userToBan] = true;
-    bot.sendMessage(chatId, `*ব্যবহারকারী ${userToBan} নিষিদ্ধ করা হয়েছে।*`, { parse_mode: 'Markdown' });
+    // Broadcast message logic here
+  }
+});
+
+// /ban command to ban a user
+bot.onText(/\/ban (\d+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+  const userIdToBan = match[1];
+
+  if (adminChatIds.includes(chatId.toString())) {
+    bannedUsers[userIdToBan] = true;
+    bot.sendMessage(chatId, `*ব্যবহারকারী ${userIdToBan} নিষিদ্ধ করা হয়েছে।*\n\n*User ${userIdToBan} has been banned.*`, { parse_mode: 'Markdown' });
+    bot.sendMessage(userIdToBan, '*আপনি এই বট ব্যবহার থেকে নিষিদ্ধ হয়েছেন।*', { parse_mode: 'Markdown' });
   }
 });
 
 // /unban command to unban a user
-bot.onText(/\/unban (.+)/, (msg, match) => {
+bot.onText(/\/unban (\d+)/, (msg, match) => {
   const chatId = msg.chat.id;
-  const userToUnban = match[1];
+  const userIdToUnban = match[1];
 
   if (adminChatIds.includes(chatId.toString())) {
-    delete bannedUsers[userToUnban];
-    bot.sendMessage(chatId, `*ব্যবহারকারী ${userToUnban} নিষেধাজ্ঞা তুলে নেওয়া হয়েছে।*`, { parse_mode: 'Markdown' });
+    delete bannedUsers[userIdToUnban];
+    bot.sendMessage(chatId, `*ব্যবহারকারী ${userIdToUnban} নিষিদ্ধমুক্ত করা হয়েছে।*\n\n*User ${userIdToUnban} has been unbanned.*`, { parse_mode: 'Markdown' });
+    bot.sendMessage(userIdToUnban, '*আপনি আবার এই বট ব্যবহার করতে পারবেন।*', { parse_mode: 'Markdown' });
   }
 });
 
-// /banned command to list all banned users
+// /banned command to view the list of banned users
 bot.onText(/\/banned/, (msg) => {
   const chatId = msg.chat.id;
 
   if (adminChatIds.includes(chatId.toString())) {
-    let bannedUsersList = '*নিষিদ্ধ ব্যবহারকারীগণ:*\n';
-    Object.keys(bannedUsers).forEach((user) => {
-      bannedUsersList += `\n*ব্যবহারকারীর আইডি:* ${user}`;
+    let bannedUsersList = '*নিষিদ্ধ ব্যবহারকারীরা:*\n';
+    Object.keys(bannedUsers).forEach((bannedUser) => {
+      bannedUsersList += `\n*ব্যবহারকারীর আইডি:* ${bannedUser}`;
     });
 
-    if (bannedUsersList === '*নিষিদ্ধ ব্যবহারকারীগণ:*\n') {
+    if (bannedUsersList === '*নিষিদ্ধ ব্যবহারকারীরা:*\n') {
       bannedUsersList += '\nকোনও নিষিদ্ধ ব্যবহারকারী নেই।';
     }
 
@@ -269,6 +247,7 @@ bot.onText(/\/banned/, (msg) => {
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log('Server is running');
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
