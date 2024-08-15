@@ -3,8 +3,8 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
-const token = '7245291358:AAGRhwVievYbQCRSQ3LO-9yVG21P_gcgWu4';
-const adminChatIds = ['5197344486'];
+const token = 'BOT_TOKEN';
+const adminChatIds = ['CHAT_ID'];
 
 const bot = new TelegramBot(token, { polling: true });
 
